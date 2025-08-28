@@ -1,7 +1,8 @@
 # IncEnc_board_lib  
+
 AMT102-CAN変換基盤からのデータを処理するライブラリです  
 CANデータの受け取り処理はmain関数内でしてください。このメンバ関数でデータ変換ができます。
-
+```main.cpp
 
 #include "mbed.h"
 #include "RotaryEncoder.h"
@@ -160,3 +161,4 @@ int flash_write(uint32_t write_addr, uint32_t num){
 // void handler(){
 //     id_indicator_led = true;
 // }
+```
