@@ -213,7 +213,7 @@ mbed_app.json
 ~~~.json
 {
     "target_overrides": {
-        "NUCLEO-F446RE": {
+        "NUCLEO-F303K8": {
             "target.clock_source": "HSI"
         }
     }
