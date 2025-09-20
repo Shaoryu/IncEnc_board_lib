@@ -47,8 +47,6 @@ int main() {
   
 main.cpp(embedded)  
 ~~~main.cpp
-// タイマ割り込みでの送信も検討
-
 #include "mbed.h"
 #include "RotaryEncoder.h"
 #include <chrono>
@@ -105,12 +103,6 @@ int main(){
         angle = encoder.get_angle();
         // CANMessage send_msg(0x400 + stored_id, (const char*)&angle, sizeof(angle));
 
-        if(can.read(receive_msg)){
-            if (receive_msg.id == (0x400 + stored_id) && receive_msg.data[0] == 0xff) {
-                NVIC_SystemReset();
-            }
-        }
-
         angle_change_led = (tmp != angle);
         tmp = angle;
 
@@ -135,6 +127,13 @@ int main(){
         for(int i = 0; i < 8; i++){
             send_msg.data[i] = (uint8_t)(angle >> 8 * (7 - i));
         }     
+
+        if(can.read(receive_msg)){
+            if(receive_msg.id == (0x400 + stored_id) && receive_msg.data[0] == 0xff) {
+                NVIC_SystemReset();
+                angle = 0;
+            }
+        }
         can.write(send_msg);
 
         // printf("%2d, %lld\r\n", stored_id, angle);
@@ -186,24 +185,6 @@ int flash_write(uint32_t write_addr, uint32_t num){
     return 1;
 }
 
-// #include "mbed.h"
-
-// // BufferedSerial pc(PA_9, PA_10, 9600);
-// InterruptIn id_set_button(PA_8, PullDown);
-// DigitalOut id_indicator_led(PA_1);
-
-// void handler();
-
-// int main(){
-//     id_set_button.rise(handler);
-//     while(true){
-//         ThisThread::sleep_for(10ms);
-//     }
-// }
-
-// void handler(){
-//     id_indicator_led = true;
-// }
 ~~~
   
 内部クロックの使用を明示することも忘れないでください  
@@ -214,8 +195,10 @@ mbed_app.json
 {
     "target_overrides": {
         "NUCLEO-F303K8": {
-            "target.clock_source": "HSI"
+            "target.clock_source": "HSI", 
+            "target.restrict_size": "0xF000"
         }
     }
+}
 }
 ~~~
