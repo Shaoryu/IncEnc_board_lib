@@ -1,6 +1,12 @@
 #include "IncEnc_board.h"
 
-IncEnc_board::IncEnc_board(CAN &can, int all_node_num) : _can(can), _all_node_num(all_node_num){}
+IncEnc_board::IncEnc_board(CAN &can, int all_node_num)
+    : _can(can), _all_node_num(all_node_num){
+    _msg_buffer.assign(_all_node_num,0);
+    _can.frequency(1e6);
+    _can.mode(CAN::Normal);
+    //data_control();
+}
 
 bool IncEnc_board::encoder_reset_node(int node){
     CANMessage msg;
@@ -8,8 +14,7 @@ bool IncEnc_board::encoder_reset_node(int node){
     msg.id   = 0x400 + node;
     msg.len  = 1;
     msg.data[0] = 0xff;
-    _can.write(msg);
-    return true;
+    return _can.write(msg)==1;
 }
 
 bool IncEnc_board::encoder_reset_all(){
@@ -23,19 +28,25 @@ bool IncEnc_board::encoder_reset_all(){
 }
 
 void IncEnc_board::conv_data_node(int64_t *angle, uint8_t node){
-    CANMessage msg;
-    _can.read(msg);
     const int index = node - 1;
-    if(msg.id == 0x400+node){
-        angle[index] = 0;
-        for (int i = 0; i < 8; i++) {
-            angle[index] |= (int64_t)msg.data[i] << (8 * (7 - i));
-        }
+    angle[index] = 0;
+    for (int i = 0; i < 8; i++) {
+        angle[index] |= (int64_t)_msg_buffer[index].data[i] << (8 * (7 - i));
     }
+    
 }
 
 void IncEnc_board::conv_data_all(int64_t *angles){
     for(int node = 1; node <= _all_node_num; node++) this->conv_data_node(angles, node);
 }
 
-
+bool IncEnc_board::handle_message(const CANMessage &msg){
+    int id_idx = msg.id - 0x401;
+    if (id_idx >= 0 && id_idx < _all_node_num) {
+        _data_mutex.lock();
+        _msg_buffer[id_idx] = msg;
+        _data_mutex.unlock();
+        return true;
+    }
+    return false;
+}
