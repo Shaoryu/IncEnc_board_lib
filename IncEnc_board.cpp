@@ -1,10 +1,10 @@
 #include "IncEnc_board.h"
 
-IncEnc_board::IncEnc_board(CAN &can, int all_node_num)
+IncEnc_board::IncEnc_board(mbed::CAN &can, int all_node_num)
     : _can(can), _all_node_num(all_node_num){
     _msg_buffer.assign(_all_node_num,0);
     _can.frequency(1e6);
-    _can.mode(CAN::Normal);
+    _can.mode(mbed::CAN::Normal);
     //data_control();
 }
 
@@ -40,7 +40,7 @@ void IncEnc_board::conv_data_all(int64_t *angles){
     for(int node = 1; node <= _all_node_num; node++) this->conv_data_node(angles, node);
 }
 
-bool IncEnc_board::handle_message(const CANMessage &msg){
+bool IncEnc_board::handle_message(const mbed::CANMessage &msg){
     int id_idx = msg.id - 0x401;
     if (id_idx >= 0 && id_idx < _all_node_num) {
         _data_mutex.lock();
