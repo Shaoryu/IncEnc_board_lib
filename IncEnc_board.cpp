@@ -1,4 +1,5 @@
 #include "IncEnc_board.h"
+#include <cstring>
 
 IncEnc_board::IncEnc_board(mbed::CAN &can, int all_node_num)
     : _can(can), _all_node_num(all_node_num){
@@ -38,6 +39,17 @@ void IncEnc_board::conv_data_node(int64_t *angle, uint8_t node){
 
 void IncEnc_board::conv_data_all(int64_t *angles){
     for(int node = 1; node <= _all_node_num; node++) this->conv_data_node(angles, node);
+}
+
+void IncEnc_board::conv_data_node_v(float *speed, uint8_t node){
+    const int index = node - 1;
+    //speed[index] = 0.f;
+    std::memcpy(&speed[index], _msg_buffer[index].data, sizeof(float));
+    
+}
+
+void IncEnc_board::conv_data_all_v(float *speeds){
+    for(int node = 1; node <= _all_node_num; node++) this->conv_data_node_v(speeds, node);
 }
 
 bool IncEnc_board::handle_message(const mbed::CANMessage &msg){
