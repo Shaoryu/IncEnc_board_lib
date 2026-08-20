@@ -48,11 +48,12 @@ int main() {
 main.cpp(embedded)  
 ~~~main.cpp
 #include "mbed.h"
-#include "RotaryEncoder.h"
+#include "rotaryencoder/STM32_encoder/STM32_encoder.h"
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
-
-using namespace std::chrono;
+#include <cstdio>
+#include <cstring>
 
 #define CONFIRM_TIME 1000ms
 #define BLINK_INTERVAL 150ms
@@ -60,27 +61,43 @@ using namespace std::chrono;
 #define ID_PAGE_ADDRESS 0x0800F000
 #define ANGLE_PAGE_ADDRESS 0x0800F800
 
+#ifndef M_PI
+#define M_PI 3.14159f
+#endif
+
+// 1パルスあたりの移動角度 [deg/pulse] (例: 200分解能×4倍率 = 800pulse/回転 -> 360/800 = 0.45 deg)
+constexpr float DEG_PER_PULSE = 360.0f / (200.0f * 4.0f);
+
 uint32_t stored_id = *((uint32_t*)ID_PAGE_ADDRESS);
 int64_t stored_angle = *((int64_t*)ANGLE_PAGE_ADDRESS);
+typedef union{
+    uint8_t _msg_buf[8];
+    int64_t _msg_ang;
+} ang2can;
+ang2can conv;
 
-DigitalOut can_led(PA_0);
-DigitalOut id_indicator_led(PA_1);
-DigitalOut angle_change_led(PA_2);
-InterruptIn id_set_button(PA_8, PullDown); // DigitalIn
+mbed::DigitalOut can_led(PA_0);
+mbed::DigitalOut id_indicator_led(PA_1);
+mbed::DigitalOut angle_change_led(PA_3);//25年版からこの1行を変化させるだけでも問題ない
+mbed::InterruptIn id_set_button(PA_8, PullDown); // DigitalIn
 STM32_encoder encoder(PA_6, PA_7); 
-// BufferedSerial pc(USBTX, USBRX, 9600);
-BufferedSerial debug_uart(PA_9, PA_10, 9600);
-CAN can(PA_11, PA_12, 1000000);
-CANMessage send_msg, receive_msg;
+// mbed::BufferedSerial pc(USBTX, USBRX, 9600);
+//mbed::BufferedSerial debug_uart(PA_9, PA_10, 9600);
+mbed::CAN can(PA_11, PA_12, 1000000);
+mbed::CANMessage send_msg, receive_msg;
+constexpr size_t sizedata=sizeof(send_msg.data);
 
-Timer id_set_timer, can_check_timer;
-Timeout blink_event;
+mbed::Timer id_set_timer, can_check_timer,v_Timer;
+mbed::Timeout blink_event;
 
 volatile int new_id_counter = 0;
 int blink_count = 0;
 uint16_t tderr_cnt = 0;
 bool is_id_set_mode = false;
-int64_t angle, tmp = 0;
+bool is_v_mode=false,prev_v=false;
+int64_t angle = 0 , prev_angle = 0 , tmp = 0;
+float vel=0.f;
+constexpr size_t sizedata_v=sizeof(vel);
 
 void id_set_isr();
 void blink_handler();
@@ -89,8 +106,10 @@ int flash_write(uint32_t write_addr, uint32_t num);
 int main(){
     // printf("main function start\r\n");
     can.reset();
+    can.filter(0x400 + stored_id, 0x780);
     id_set_timer.start();
     can_check_timer.start();
+    v_Timer.start();
     id_set_button.rise(id_set_isr);
     encoder.start();
     encoder.reset();
@@ -98,10 +117,10 @@ int main(){
     blink_handler();
 
     angle_change_led = false;
-
+    int64_t prev_count;
     while(true){
         angle = encoder.get_angle();
-        // CANMessage send_msg(0x400 + stored_id, (const char*)&angle, sizeof(angle));
+        int64_t current_count = encoder.get_count();
 
         angle_change_led = (tmp != angle);
         tmp = angle;
@@ -122,17 +141,48 @@ int main(){
         
         tderr_cnt = can.tderror();
         // tderr_cnt = 130; // test
-        can_led = (tderr_cnt < 255);
-
-        for(int i = 0; i < 8; i++){
-            send_msg.data[i] = (uint8_t)(angle >> 8 * (7 - i));
-        }     
+        can_led = (tderr_cnt < 255);   
 
         if(can.read(receive_msg)){
-            if(receive_msg.id == (0x400 + stored_id) && receive_msg.data[0] == 0xff) {
-                NVIC_SystemReset();
-                angle = 0;
+            if(receive_msg.id == (0x400 + stored_id)) {
+                if(receive_msg.data[0] == 0xff){
+                    NVIC_SystemReset();
+                    angle = 0;
+                }else if(receive_msg.data[0]==1){
+                    is_v_mode=true;
+                }else if(receive_msg.data[0]==2){
+                    is_v_mode=false;
+                    prev_v=false;
+                }
             }
+        }
+
+        if (is_v_mode) {
+            if (prev_v) {
+                float dt = std::chrono::duration<float>{v_Timer.elapsed_time()}.count();
+                v_Timer.reset();
+
+                if (dt > 1e-4) {
+                    // 1. まず 64bit 整数同士で差分（10ms間の経過パルス数）を計算
+                    int64_t diff_count = current_count - prev_count;
+
+                    // 2. 差分（高々数千程度の小さい値）になってから float に変換して速度計算
+                    float raw_vel = (static_cast<float>(diff_count) * DEG_PER_PULSE) / dt;
+
+                    // // 3. ローパスフィルターを通す（ノイズ除去）
+                    // vel = vel + 0.2f * (raw_vel - vel);
+                    vel=raw_vel;
+                }
+
+                std::memset(send_msg.data, 0, 8);
+                std::memcpy(send_msg.data, &vel, sizeof(float));
+            } else {
+                std::memset(send_msg.data, 0, 8);
+                prev_v = true;
+                prev_count=current_count;
+                v_Timer.reset();
+            }
+            prev_count = current_count;
         }
         can.write(send_msg);
 
@@ -184,6 +234,7 @@ int flash_write(uint32_t write_addr, uint32_t num){
     HAL_FLASH_Lock();
     return 1;
 }
+
 
 ~~~
   
