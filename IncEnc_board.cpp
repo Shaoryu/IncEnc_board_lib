@@ -3,10 +3,17 @@
 
 IncEnc_board::IncEnc_board(mbed::CAN &can, int all_node_num)
     : _can(can), _all_node_num(all_node_num){
-    _msg_buffer.assign(_all_node_num,0);
+    
+    // CANMessageの空オブジェクトで初期化
+    _msg_buffer.assign(_all_node_num, mbed::CANMessage());
+    
+    // 【追加】データ配列を明示的にゼロクリアし、NaN化を物理的に防ぐ
+    for (int i = 0; i < _all_node_num; ++i) {
+        std::memset(_msg_buffer[i].data, 0, 8);
+    }
+
     _can.frequency(1e6);
     _can.mode(mbed::CAN::Normal);
-    //data_control();
 }
 
 bool IncEnc_board::encoder_reset_node(int node){
