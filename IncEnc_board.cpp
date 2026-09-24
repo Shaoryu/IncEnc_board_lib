@@ -38,10 +38,10 @@ bool IncEnc_board::encoder_reset_all(){
 void IncEnc_board::conv_data_node(int64_t *angle, uint8_t node){
     const int index = node - 1;
     angle[index] = 0;
-    // for (int i = 0; i < 8; i++) {
-    //     angle[index] |= (int64_t)_msg_buffer[index].data[i] << (8 * (7 - i));
-    // }
-    std::memcpy(&angle[index],_msg_buffer[index].data,8);
+    for (int i = 0; i < 8; i++) {
+        angle[index] |= (int64_t)_msg_buffer[index].data[i] << (8 * (7 - i));
+    }
+    // std::memcpy(&angle[index],_msg_buffer[index].data,8);
     
 }
 
