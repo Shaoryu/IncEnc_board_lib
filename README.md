@@ -1,11 +1,12 @@
 # IncEnc_board_lib  
 AMT102-CAN変換基盤からのデータを処理するライブラリです  
-CANデータの受け取り処理はmain関数内でしてください。このメンバ関数でデータ変換ができます。
+CANデータの受け取り処理はmain関数内でしてください。このメンバ関数でデータ変換ができます。  
   
 注意  
-もしencoder_reset_all()ですべてのnodeにリセットコマンドを送信できない不具合が起きた場合、IncEnc_board.cpp内のコメントアウトした部分を戻してあげるとすべてにリセットがかかると思います　だたこれは_can.write(msg)を確実に行うための応急処置的なもののため、main関数の処理中にThisThread::sleep_for()が入ってしまうことに注意してください
+もしencoder_reset_all()ですべてのnodeにリセットコマンドを送信できない不具合が起きた場合、IncEnc_board.cpp内のコメントアウトした部分を戻してあげるとすべてにリセットがかかると思います　
+だたこれは_can.write(msg)を確実に行うための応急処置的なもののため、main関数の処理中にThisThread::sleep_for()が入ってしまうことに注意してください  
 
--  **追記** (2026/08/24,桂木)
+-  **追記** (2026/08/24,桂木)  
 26年版(分圧している方)を使用している場合、書き込んでいるプログラムについて25年度版からangle_change_ledをPA_2からPA_3へと変化させてください
   
 サンプルコード  
@@ -41,7 +42,49 @@ int main() {
     }
 }
 ~~~  
+
+> **Note** :値をリセットしたい！というときは
+> 値をリセットしたいとき、encoder.encoder_reset_all()を使用することはお勧めしません  
+> 先の関数は**基盤**をリセットするためにあり、そのためには時間を要するからです  
+> しかも成功する保証もありません  
+> そのため、内部の値をリセットしたいときは内部的にオフセットを掛けることを勧めます  
+> 以下のサンプルプログラムを参考にしてください  
   
+main.cpp
+~~~main.cpp
+#include "mbed.h"
+#include "IncEnc_board.h"
+
+CAN can(PD_0, PD_1, 1000000);
+UnbufferedSerial pc(USBTX, USBRX, 9600);
+IncEnc_board encoder(can, 1);
+
+int main() {
+    encoder.encoder_reset_all();
+    int64_t offset_angle = 0;
+    while(true) {
+        int64_t received_angle;
+        encoder.conv_data_all(&received_angle);
+        received_angle -= offset_angle;//conv_data_all直後にオフセットを掛ける
+        if(pc.readable()){
+            char key = 0;
+            pc.read(&key, 1);
+            switch(key){
+                case 'r': 
+                    printf("offset command to node 1...\r\n");
+                    //conv_dataにて読み込んだ値そのままをオフセットに書き込むとその時点を0°として利用できる
+                    //このサンプルプログラムでは値を直接加工しているため戻すために計算処理をしている
+                    offset_angle = received_angle + offset_angle;
+                    break;
+            }
+        }
+        printf("Received data: %lld\r\n", received_angle);
+        
+        ThisThread::sleep_for(1ms);
+    }
+}
+~~~
+
   
 以下は変換基盤に書き込んでいるプログラムです。  
 不具合があった際の参考にしてください  
