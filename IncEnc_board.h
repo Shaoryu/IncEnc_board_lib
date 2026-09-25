@@ -2,6 +2,8 @@
 
 #include "mbed.h"
 #include "CANManager.h"
+
+#include <vector>
 class IncEnc_board :public CANReceiver{
 public:
     IncEnc_board(mbed::CAN &can, int all_node_num);
@@ -11,10 +13,11 @@ public:
     void conv_data_all(int64_t* angles);
     void conv_data_node_v(float* speed, uint8_t node);
     void conv_data_all_v(float* speeds);
+
+    bool handle_message(const CANMessage &msg) override;
     
 
 private:
-    bool handle_message(const mbed::CANMessage &msg) override;
     typedef union{
     uint8_t _msg_buf[8];
     int64_t _msg_ang;
